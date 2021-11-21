@@ -1,77 +1,73 @@
-# this module i created only for playing music using audio file, idk, because the audio player on play.py module not working
-# so this is the alternative
-# audio play function
-# tede ganteng tq
-
 from os import path
 
-import converter
-from callsmusic import callsmusic, queues
-from config import (
-    AUD_IMG,
-    BOT_USERNAME,
-    DURATION_LIMIT,
-    GROUP_SUPPORT,
-    QUE_IMG,
-    UPDATES_CHANNEL,
-)
-from handlers.play import convert_seconds
-from helpers.filters import command, other_filters
-from helpers.gets import get_file_name
 from pyrogram import Client
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
+from pyrogram.types import Message, Voice
 
+from callsmusic import callsmusic, queues
 
-@Client.on_message(command(["stream", f"stream@{BOT_USERNAME}"]) & other_filters)
+import converter
+from downloaders import youtube
+
+from config import BOT_NAME as bn, DURATION_LIMIT, UPDATES_CHANNEL, AUD_IMG, QUE_IMG, GROUP_SUPPORT
+from helpers.filters import command, other_filters
+from helpers.decorators import errors
+from helpers.errors import DurationLimitError
+from helpers.gets import get_url, get_file_name
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+@Client.on_message(command("stream") & other_filters)
+@errors
 async def stream(_, message: Message):
-    costumer = message.from_user.mention
-    lel = await message.reply_text("🔁 **processing** sound...")
+
+    lel = await message.reply("🔁 **Memproses** musik...")
+    sender_id = message.from_user.id
+    sender_name = message.from_user.first_name
 
     keyboard = InlineKeyboardMarkup(
-        [
             [
-                InlineKeyboardButton(
-                    text="✨ ɢʀᴏᴜᴘ", url=f"https://t.me/{GROUP_SUPPORT}"
-                ),
-                InlineKeyboardButton(
-                    text="🌻 ᴄʜᴀɴɴᴇʟ", url=f"https://t.me/{UPDATES_CHANNEL}"
-                ),
+                [
+                    InlineKeyboardButton(
+                        text="Group",
+                        url=f"https://t.me/riogroupsupport"),
+                    InlineKeyboardButton(
+                        text="Channel​",
+                        url=f"https://t.me/{UPDATES_CHANNEL}")
+                ]
             ]
-        ]
-    )
-
-    audio = message.reply_to_message.audio if message.reply_to_message else None
-    if not audio:
-        return await lel.edit("💭 **please reply to a telegram audio file**")
-    if round(audio.duration / 60) > DURATION_LIMIT:
-        return await lel.edit(
-            f"❌ **music with duration more than** `{DURATION_LIMIT}` **minutes, can't play !**"
         )
 
-    # tede_ganteng = True
-    title = audio.title
-    file_name = get_file_name(audio)
-    duration = convert_seconds(audio.duration)
-    file_path = await converter.convert(
-        (await message.reply_to_message.download(file_name))
-        if not path.isfile(path.join("downloads", file_name))
-        else file_name
-    )
-    # ambil aja bg
+    audio = (message.reply_to_message.audio or message.reply_to_message.voice) if message.reply_to_message else None
+    url = get_url(message)
+
+    if audio:
+        if round(audio.duration / 60) > DURATION_LIMIT:
+            raise DurationLimitError(
+                f"❎ Tidak dapat memutar lagu lebih dari {DURATION_LIMIT}!"
+            )
+
+        file_name = get_file_name(audio)
+        file_path = await converter.convert(
+            (await message.reply_to_message.download(file_name))
+            if not path.isfile(path.join("downloads", file_name)) else file_name
+        )
+    elif url:
+        file_path = await converter.convert(youtube.download(url))
+    else:
+        return await lel.edit_text("❎ anda tidak memberikan saya musik atau link YouTube untuk diputar!")
+
     if message.chat.id in callsmusic.pytgcalls.active_calls:
         position = await queues.put(message.chat.id, file=file_path)
         await message.reply_photo(
-            photo=f"{QUE_IMG}",
-            caption=f"💡 **Track added to queue »** `{position}`\n\n🏷 **Name:** {title[:50]}\n⏱ **Duration:** `{duration}`\n🎧 **Request by:** {costumer}",
-            reply_markup=keyboard,
-        )
+        photo=f"{QUE_IMG}",
+        reply_markup=keyboard,
+        caption=f"💡  lagu anda ditambahkan ke **antrian!**\n\n🎧 Atas permintaan {costumer}")
+        return await lel.delete()
     else:
         callsmusic.pytgcalls.join_group_call(message.chat.id, file_path)
+        costumer = message.from_user.mention
         await message.reply_photo(
-            photo=f"{AUD_IMG}",
-            caption=f"🏷 **Name:** {title[:50]}\n⏱ **Duration:** `{duration}`\n💡 **Status:** `Playing`\n"
-            + f"🎧 **Request by:** {costumer}",
-            reply_markup=keyboard,
+        photo=f"{AUD_IMG}",
+        reply_markup=keyboard,
+        caption=f"🎧 **sedang memutar** sebuah lagu\n\n🎧 Atas permintaan {costumer}!"
         )
-
-    return await lel.delete()
+        return await lel.delete()
