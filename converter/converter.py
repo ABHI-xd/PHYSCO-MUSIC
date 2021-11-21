@@ -27,7 +27,6 @@ async def convert(file_path: str) -> str:
                 f"{out}"
             ),
             stdin=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
         )
 
         await proc.communicate()
